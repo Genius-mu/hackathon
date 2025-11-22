@@ -10,7 +10,11 @@ import logo from "figma:asset/eb6d15466f76858f9aa3d9535154b129bc9f0c63.png";
 
 interface LoginProps {
   userType: "patient" | "clinic" | null;
-  onComplete: (data: { email: string; userType: "patient" | "clinic" }) => void;
+  onComplete: (data: {
+    email: string;
+    userType: "patient" | "clinic";
+    token: string;
+  }) => void;
   onBack: () => void;
   onSignup: () => void;
 }

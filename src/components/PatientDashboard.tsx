@@ -819,19 +819,30 @@ export default function PatientDashboard({
   //   }
   // };
 
+  // In your PatientDashboard component, update the handleGenerateQR function
   const handleGenerateQR = async () => {
-    setIsLoading(true);
+    if (!selectedClinic) {
+      showToast("Please select a clinic first", "error");
+      return;
+    }
 
+    setIsLoading(true);
     try {
-      const result = await generateQRCode("demo-clinic-id"); // Remove user.token parameter
-      setQrCode(result.qrCode);
-      const expiry = new Date();
-      expiry.setMinutes(expiry.getMinutes() + 15);
-      setQrExpiry(expiry);
-      showToast("New QR code generated! Valid for 15 minutes.", "success");
+      const qrData = await generateQRCode(selectedClinic);
+
+      if (qrData) {
+        setQrCodeData(qrData);
+        setShowQRModal(true);
+        showToast("QR code generated successfully!", "success");
+      } else {
+        showToast("Failed to generate QR code", "error");
+      }
     } catch (error) {
       console.error("Error generating QR code:", error);
-      showToast("Failed to generate QR code", "error");
+      showToast(
+        "QR service temporarily unavailable. Please try again later.",
+        "warning"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -2225,99 +2236,6 @@ export default function PatientDashboard({
           </TabsContent>
         </Tabs>
       </div>
-
-      {/* All Modals remain the same but with disabled states on buttons during isLoading */}
-      {/* I'll include just the key modals with loading states */}
-
-      {/* <Dialog open={showAddSymptom} onOpenChange={setShowAddSymptom}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add New Prescription</DialogTitle>
-            <DialogDescription>
-              Enter details about your new medication
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="med-name">Medication Name *</Label>
-              <Input
-                id="med-name"
-                value={newPrescription.name}
-                onChange={(e) =>
-                  setNewPrescription({
-                    ...newPrescription,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="e.g., Amoxicillin"
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <Label htmlFor="dosage">Dosage *</Label>
-              <Input
-                id="dosage"
-                value={newPrescription.dosage}
-                onChange={(e) =>
-                  setNewPrescription({
-                    ...newPrescription,
-                    dosage: e.target.value,
-                  })
-                }
-                placeholder="e.g., 500mg"
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <Label htmlFor="frequency">Frequency</Label>
-              <Input
-                id="frequency"
-                value={newPrescription.frequency}
-                onChange={(e) =>
-                  setNewPrescription({
-                    ...newPrescription,
-                    frequency: e.target.value,
-                  })
-                }
-                placeholder="e.g., Three times daily"
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <Label htmlFor="prescribed-by">Prescribed By</Label>
-              <Input
-                id="prescribed-by"
-                value={newPrescription.prescribedBy}
-                onChange={(e) =>
-                  setNewPrescription({
-                    ...newPrescription,
-                    prescribedBy: e.target.value,
-                  })
-                }
-                placeholder="e.g., Dr. Smith"
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowAddPrescription(false)}
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAddPrescription}
-              disabled={
-                !newPrescription.name || !newPrescription.dosage || isLoading
-              }
-            >
-              {isLoading ? "Adding..." : "Add Prescription"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog> */}
 
       {/* Simple Symptom Modal */}
       <Dialog open={showAddSymptom} onOpenChange={setShowAddSymptom}>
