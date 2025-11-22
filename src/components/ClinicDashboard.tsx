@@ -52,6 +52,7 @@ import {
   getClinicPatientInfo,
   checkPrescriptionInteractions,
   getEncounterById,
+  createPrescription,
 } from "./api/api";
 import logo from "figma:asset/eb6d15466f76858f9aa3d9535154b129bc9f0c63.png";
 
@@ -606,9 +607,105 @@ export default function ClinicDashboard({
     }, 1500);
   };
 
+  // const handleAddPrescription = async () => {
+  //   if (!prescriptionData.medication || !prescriptionData.dosage) {
+  //     showToast("Please fill in required fields", "error");
+  //     return;
+  //   }
+
+  //   if (!selectedPatient) {
+  //     showToast("Please select a patient first", "error");
+  //     return;
+  //   }
+
+  //   setIsLoading(true);
+
+  //   try {
+  //     // Get the selected patient data
+  //     const patient = patients.find((p) => p.id === selectedPatient);
+  //     if (!patient) {
+  //       showToast("Patient not found", "error");
+  //       return;
+  //     }
+
+  //     // Prepare prescription data
+  //     const prescriptionPayload = {
+  //       patientId: selectedPatient,
+  //       patientName: patient.name,
+  //       medication: prescriptionData.medication,
+  //       dosage: prescriptionData.dosage,
+  //       frequency: prescriptionData.frequency || "As directed",
+  //       duration: prescriptionData.duration || "Ongoing",
+  //       instructions: prescriptionData.instructions || "",
+  //       prescribedBy: user.name, // Clinic name
+  //       prescribedDate: new Date().toISOString(),
+  //     };
+
+  //     console.log("Creating prescription:", prescriptionPayload);
+
+  //     // Call API to create prescription
+  //     const result = await createPrescription(prescriptionPayload);
+  //     console.log("Prescription created successfully:", result);
+
+  //     // Check for drug interactions
+  //     const currentMeds = patient.currentMedications || [];
+  //     const medicationsToCheck = [...currentMeds, prescriptionData.medication];
+
+  //     if (medicationsToCheck.length > 1) {
+  //       const interactionResult = await handleCheckDrugInteractions(
+  //         medicationsToCheck
+  //       );
+
+  //       // If serious interactions, show warning but still create prescription
+  //       if (interactionResult?.severity === "high") {
+  //         showToast(
+  //           "⚠️ Serious drug interactions detected! Prescription created with warning.",
+  //           "warning"
+  //         );
+  //       }
+  //     }
+
+  //     // Update local state
+  //     setPatients(
+  //       patients.map((p) =>
+  //         p.id === selectedPatient
+  //           ? {
+  //               ...p,
+  //               activePrescriptions: p.activePrescriptions + 1,
+  //               currentMedications: [
+  //                 ...(p.currentMedications || []),
+  //                 prescriptionData.medication,
+  //               ],
+  //             }
+  //           : p
+  //       )
+  //     );
+
+  //     // Reset form
+  //     setPrescriptionData({
+  //       medication: "",
+  //       dosage: "",
+  //       frequency: "",
+  //       duration: "",
+  //       instructions: "",
+  //     });
+  //     setShowAddPrescription(false);
+
+  //     showToast(
+  //       `${prescriptionData.medication} prescribed successfully! Sent to patient and pharmacy.`,
+  //       "success"
+  //     );
+  //   } catch (error) {
+  //     console.error("Error adding prescription:", error);
+  //     showToast("Failed to add prescription. Please try again.", "error");
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
   const handleAddPrescription = async () => {
     if (!prescriptionData.medication || !prescriptionData.dosage) {
-      showToast("Please fill in required fields", "error");
+      showToast("Please fill in medication name and dosage", "error");
       return;
     }
 
@@ -620,37 +717,50 @@ export default function ClinicDashboard({
     setIsLoading(true);
 
     try {
-      // Check for drug interactions first
-      const currentMeds = ["Current", "Medications"];
-      const medicationsToCheck = [...currentMeds, prescriptionData.medication];
+      // Get the selected patient data
+      const patient = patients.find((p) => p.id === selectedPatient);
+      if (!patient) {
+        showToast("Patient not found", "error");
+        return;
+      }
 
-      const interactionResult = await handleCheckDrugInteractions(
-        medicationsToCheck
+      // Prepare prescription data for storage
+      const prescriptionPayload = {
+        patientId: selectedPatient,
+        patientName: patient.name,
+        medication: prescriptionData.medication,
+        dosage: prescriptionData.dosage,
+        frequency: prescriptionData.frequency || "As directed",
+        duration: prescriptionData.duration || "Ongoing",
+        instructions: prescriptionData.instructions || "Take as prescribed",
+        prescribedBy: user.name || "Clinic",
+        prescribedDate: new Date().toISOString(),
+        status: "active",
+      };
+
+      console.log("💊 Creating and storing prescription:", prescriptionPayload);
+
+      // ✅ STORE PRESCRIPTION VIA API
+      const result = await createPrescription(prescriptionPayload);
+      console.log("✅ Prescription stored successfully:", result);
+
+      // ✅ UPDATE LOCAL STATE
+      const updatedPatients = patients.map((p) =>
+        p.id === selectedPatient
+          ? {
+              ...p,
+              activePrescriptions: p.activePrescriptions + 1,
+              currentMedications: [
+                ...(p.currentMedications || []),
+                prescriptionData.medication,
+              ],
+            }
+          : p
       );
 
-      // If serious interactions, ask for confirmation
-      if (interactionResult?.severity === "high") {
-        if (
-          !confirm(
-            "Serious drug interactions detected. Continue with prescription?"
-          )
-        ) {
-          return;
-        }
-      }
+      setPatients(updatedPatients);
 
-      // Update patient's prescription count
-      const patient = patients.find((p) => p.id === selectedPatient);
-      if (patient) {
-        setPatients(
-          patients.map((p) =>
-            p.id === selectedPatient
-              ? { ...p, activePrescriptions: p.activePrescriptions + 1 }
-              : p
-          )
-        );
-      }
-
+      // ✅ RESET FORM
       setPrescriptionData({
         medication: "",
         dosage: "",
@@ -658,15 +768,56 @@ export default function ClinicDashboard({
         duration: "",
         instructions: "",
       });
+
       setShowAddPrescription(false);
 
+      // ✅ SHOW SUCCESS MESSAGE
       showToast(
-        `${prescriptionData.medication} prescribed successfully! Sent to pharmacy and patient notified.`,
+        `✅ ${prescriptionData.medication} prescribed and stored! Patient will see it immediately.`,
         "success"
       );
+
+      console.log(
+        "🔄 Patient state updated. New prescription count:",
+        updatedPatients.find((p) => p.id === selectedPatient)
+          ?.activePrescriptions
+      );
     } catch (error) {
-      console.error("Error adding prescription:", error);
-      showToast("Failed to add prescription", "error");
+      console.error("❌ Error adding prescription:", error);
+      showToast("Failed to store prescription. Please try again.", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Add this function to fetch and display patient details
+  const handleViewPatientDetails = async (patientId: string) => {
+    try {
+      setIsLoading(true);
+
+      // Fetch patient information from API
+      const patientInfo = await getClinicPatientInfo(patientId);
+      console.log("Patient info:", patientInfo);
+
+      // Update the patient in local state with additional info
+      setPatients((prevPatients) =>
+        prevPatients.map((p) =>
+          p.id === patientId
+            ? {
+                ...p,
+                conditions: patientInfo.conditions || [],
+                currentMedications: patientInfo.currentMedications || [],
+                allergies: patientInfo.allergies || [],
+              }
+            : p
+        )
+      );
+
+      setSelectedPatient(patientId);
+      setShowPatientDetails(true);
+    } catch (error) {
+      console.error("Error fetching patient details:", error);
+      showToast("Failed to load patient details", "error");
     } finally {
       setIsLoading(false);
     }

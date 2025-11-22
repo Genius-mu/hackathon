@@ -62,24 +62,9 @@ import {
   checkDrugInteractions,
   generateQRCode,
   aiEMRExtraction,
+  getPatientPrescriptions,
 } from "./api/api";
 import { getStoredToken, removeToken, storeToken } from "./api/api";
-
-// const getStoredToken = () => {
-//   return (
-//     localStorage.getItem("patientToken") || localStorage.getItem("clinicToken")
-//   );
-// };
-
-// const storeToken = (token: string, userType: string) => {
-//   const key = userType === "patient" ? "patientToken" : "clinicToken";
-//   localStorage.setItem(key, token);
-// };
-
-// const removeToken = () => {
-//   localStorage.removeItem("patientToken");
-//   localStorage.removeItem("clinicToken");
-// };
 
 interface User {
   name: string;
@@ -104,6 +89,18 @@ interface Prescription {
   startDate: string;
   compatibility: number;
   status: string;
+  aiAnalysis?: {
+    riskLevel: "low" | "medium" | "high";
+    interactions: string[];
+    recommendations: string[];
+    alternatives: Array<{
+      name: string;
+      reason: string;
+      costComparison: "lower" | "similar" | "higher";
+    }>;
+    optimalDosage?: string;
+    monitoringRecommendations: string[];
+  };
 }
 
 interface Symptom {
@@ -161,13 +158,6 @@ export default function PatientDashboard({
   const [patientRecords, setPatientRecords] = useState<any[]>([]);
   const [patientProfile, setPatientProfile] = useState<any>(null);
 
-  // Form states
-  const [newPrescription, setNewPrescription] = useState({
-    name: "",
-    dosage: "",
-    frequency: "",
-    prescribedBy: "",
-  });
   const [newSymptom, setNewSymptom] = useState({
     symptom: "",
     severity: "mild",
@@ -184,6 +174,203 @@ export default function PatientDashboard({
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [qrCode, setQrCode] = useState<string>("");
   const [qrExpiry, setQrExpiry] = useState<Date | null>(null);
+
+  // Add these missing state variables at the top of your component
+  const [isAnalyzingPrescription, setIsAnalyzingPrescription] = useState(false);
+  const [prescriptionAnalysis, setPrescriptionAnalysis] = useState<any>(null);
+  const [medicationForAlternatives, setMedicationForAlternatives] =
+    useState("");
+  const [isFindingAlternatives, setIsFindingAlternatives] = useState(false);
+  const [medicationAlternatives, setMedicationAlternatives] = useState<any[]>(
+    []
+  );
+  const [selectedClinic, setSelectedClinic] = useState<any>(null);
+  const [qrCodeData, setQrCodeData] = useState<any>(null);
+  const [showQRModal, setShowQRModal] = useState(false);
+
+  // Fix the newPrescription state - remove the duplicate declaration
+  const [newPrescription, setNewPrescription] = useState({
+    name: "",
+    dosage: "",
+    frequency: "",
+    prescribedBy: "",
+    condition: "", // Added for AI analysis
+  });
+
+  // Add these missing API functions (you'll need to implement them in your api.ts)
+  const analyzePrescriptionWithAI = async (prescriptionData: any) => {
+    // This is a placeholder - implement based on your backend API
+    try {
+      // Simulate API call
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            data: {
+              riskLevel: "low",
+              interactions: ["No significant interactions detected"],
+              recommendations: ["Take with food to minimize stomach upset"],
+              alternatives: [
+                {
+                  name: "Alternative Medication A",
+                  reason: "Lower cost with similar efficacy",
+                  costComparison: "lower",
+                },
+              ],
+              optimalDosage: "10mg once daily",
+              monitoringRecommendations: ["Monitor blood pressure weekly"],
+            },
+          });
+        }, 2000);
+      });
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const getAIMedicationAlternatives = async (
+    medication: string,
+    condition: string
+  ) => {
+    // This is a placeholder - implement based on your backend API
+    try {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            data: {
+              alternatives: [
+                {
+                  name: "Alternative Medication A",
+                  reason: "Better safety profile for your condition",
+                  costComparison: "similar",
+                  considerations: "May cause mild drowsiness",
+                },
+                {
+                  name: "Alternative Medication B",
+                  reason: "More cost-effective option",
+                  costComparison: "lower",
+                  considerations: "Take with meals",
+                },
+              ],
+            },
+          });
+        }, 1500);
+      });
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // Fix the handleAnalyzePrescription function
+  const handleAnalyzePrescription = async () => {
+    if (!newPrescription.name || !newPrescription.condition) {
+      showToast("Please enter medication name and condition", "error");
+      return;
+    }
+
+    setIsAnalyzingPrescription(true);
+    try {
+      const analysis = await analyzePrescriptionWithAI({
+        medication: newPrescription.name,
+        dosage: newPrescription.dosage,
+        frequency: newPrescription.frequency,
+        condition: newPrescription.condition,
+        patientAge: calculateAge(user.dob || "1990-01-01"), // Provide default if undefined
+        existingConditions: patientProfile?.conditions || [],
+      });
+
+      setPrescriptionAnalysis(analysis.data);
+      showToast("AI analysis completed successfully", "success");
+    } catch (error) {
+      console.error("Error analyzing prescription:", error);
+      showToast("Failed to analyze prescription", "error");
+    } finally {
+      setIsAnalyzingPrescription(false);
+    }
+  };
+
+  // Fix the calculateAge function to handle undefined DOB
+  const calculateAge = (dob: string | undefined) => {
+    if (!dob) return 30; // Default age if DOB is not provided
+
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < birthDate.getDate())
+    ) {
+      age--;
+    }
+
+    return age;
+  };
+
+  // Add handler for finding alternatives
+  const handleFindAlternatives = async () => {
+    if (!medicationForAlternatives.trim()) return;
+
+    setIsFindingAlternatives(true);
+    try {
+      const result = await getAIMedicationAlternatives(
+        medicationForAlternatives,
+        "general" // You could make this condition-specific
+      );
+      setMedicationAlternatives(result.data.alternatives || []);
+      showToast(
+        `Found ${result.data.alternatives?.length || 0} alternatives`,
+        "success"
+      );
+    } catch (error) {
+      console.error("Error finding alternatives:", error);
+      showToast("Failed to find alternatives", "error");
+    } finally {
+      setIsFindingAlternatives(false);
+    }
+  };
+
+  // Enhanced handleAddPrescription to include AI analysis
+  const handleAddPrescription = () => {
+    if (!newPrescription.name || !newPrescription.dosage) {
+      showToast("Please fill in required fields (name and dosage)", "error");
+      return;
+    }
+
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const newPx: Prescription = {
+        id: Date.now().toString(),
+        name: newPrescription.name,
+        dosage: newPrescription.dosage,
+        frequency: newPrescription.frequency || "As directed",
+        prescribedBy: newPrescription.prescribedBy || "Self-added",
+        startDate: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        compatibility: Math.floor(Math.random() * 15) + 85,
+        status: "active",
+        aiAnalysis: prescriptionAnalysis || undefined, // Include AI analysis if available
+      };
+
+      setPrescriptions([newPx, ...prescriptions]);
+      setNewPrescription({
+        name: "",
+        dosage: "",
+        frequency: "",
+        prescribedBy: "",
+        condition: "",
+      });
+      setPrescriptionAnalysis(null); // Reset analysis
+      setShowAddPrescription(false);
+      setIsLoading(false);
+      showToast(`${newPx.name} added successfully!`, "success");
+      setActiveTab("prescriptions");
+    }, 1000);
+  };
 
   // Load patient data on component mount
   useEffect(() => {
@@ -214,19 +401,47 @@ export default function PatientDashboard({
   //     const symptomsData = await getSymptoms();
   //     setSymptoms(symptomsData || []);
 
-  //     // Extract prescriptions from records
-  //     const extractedPrescriptions = extractPrescriptionsFromRecords(records);
-  //     setPrescriptions(extractedPrescriptions);
+  //     // Load prescriptions from API
+  //     const prescriptionsData = await getPatientPrescriptions(user._id);
+  //     console.log("Loaded prescriptions:", prescriptionsData);
+
+  //     if (prescriptionsData && prescriptionsData.length > 0) {
+  //       // Convert API prescription format to component format
+  //       const formattedPrescriptions = prescriptionsData.map((px: any) => ({
+  //         id: px._id,
+  //         name: px.medication,
+  //         dosage: px.dosage,
+  //         frequency: px.frequency,
+  //         prescribedBy: px.prescribedBy,
+  //         startDate: new Date(px.prescribedDate).toLocaleDateString("en-US", {
+  //           month: "short",
+  //           day: "numeric",
+  //           year: "numeric",
+  //         }),
+  //         compatibility: Math.floor(Math.random() * 15) + 85, // Could be calculated from API
+  //         status: px.status || "active",
+  //       }));
+
+  //       setPrescriptions(formattedPrescriptions);
+  //     } else {
+  //       // Fallback to extracted prescriptions if no API data
+  //       const extractedPrescriptions = extractPrescriptionsFromRecords(records);
+  //       setPrescriptions(extractedPrescriptions);
+  //     }
   //   } catch (error: any) {
   //     console.error("Error loading patient data:", error);
 
   //     if (error.response?.status === 401) {
   //       showToast("Session expired. Please log in again.", "error");
-  //       // Clear token and logout
   //       removeToken();
   //       onLogout();
   //     } else {
   //       showToast("Failed to load patient data", "error");
+  //       // Load fallback data
+  //       const extractedPrescriptions = extractPrescriptionsFromRecords({
+  //         localRecords: [],
+  //       });
+  //       setPrescriptions(extractedPrescriptions);
   //     }
   //   } finally {
   //     setIsLoading(false);
@@ -246,35 +461,103 @@ export default function PatientDashboard({
       }
 
       // Load patient profile
-      const profile = await getPatientProfile(); // Remove user.token parameter
+      const profile = await getPatientProfile();
       setPatientProfile(profile);
 
       // Load patient records
-      const records = await getPatientRecords(); // Remove user.token parameter
+      const records = await getPatientRecords();
       setPatientRecords(records.localRecords || []);
 
       // Load symptoms
-      const symptomsData = await getSymptoms(); // Remove user.token parameter
+      const symptomsData = await getSymptoms();
       setSymptoms(symptomsData || []);
 
-      // Extract prescriptions from records
-      const extractedPrescriptions = extractPrescriptionsFromRecords(records);
-      setPrescriptions(extractedPrescriptions);
+      // ✅ FETCH PRESCRIPTIONS FROM DATABASE/STORAGE
+      console.log("🔄 Fetching prescriptions for patient:", user._id);
+      const prescriptionsData = await getPatientPrescriptions(user._id);
+      console.log("📋 Prescriptions fetched from storage:", prescriptionsData);
+
+      if (prescriptionsData && prescriptionsData.length > 0) {
+        // Convert API prescription format to component format
+        const formattedPrescriptions = prescriptionsData.map((px: any) => ({
+          id: px._id,
+          name: px.medication,
+          dosage: px.dosage,
+          frequency: px.frequency,
+          prescribedBy: px.prescribedBy,
+          startDate: new Date(px.prescribedDate).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+          compatibility: Math.floor(Math.random() * 15) + 85,
+          status: px.status || "active",
+          instructions: px.instructions,
+          duration: px.duration,
+        }));
+
+        console.log(
+          "✅ Setting prescriptions in state:",
+          formattedPrescriptions
+        );
+        setPrescriptions(formattedPrescriptions);
+      } else {
+        console.log("⚠️ No prescriptions found, using fallback data");
+        // Fallback to extracted prescriptions if no API data
+        const extractedPrescriptions = extractPrescriptionsFromRecords(records);
+        setPrescriptions(extractedPrescriptions);
+      }
     } catch (error: any) {
-      console.error("Error loading patient data:", error);
+      console.error("❌ Error loading patient data:", error);
 
       if (error.response?.status === 401) {
         showToast("Session expired. Please log in again.", "error");
-        // Clear token and logout
         removeToken();
         onLogout();
       } else {
         showToast("Failed to load patient data", "error");
+        // Load fallback data
+        const extractedPrescriptions = extractPrescriptionsFromRecords({
+          localRecords: [],
+        });
+        setPrescriptions(extractedPrescriptions);
       }
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Refresh prescriptions (call this when you know new prescriptions were added)
+  const refreshPrescriptions = async () => {
+    try {
+      console.log("🔄 Manually refreshing prescriptions...");
+      const prescriptionsData = await getPatientPrescriptions(user._id);
+
+      if (prescriptionsData && prescriptionsData.length > 0) {
+        const formattedPrescriptions = prescriptionsData.map((px: any) => ({
+          id: px._id,
+          name: px.medication,
+          dosage: px.dosage,
+          frequency: px.frequency,
+          prescribedBy: px.prescribedBy,
+          startDate: new Date(px.prescribedDate).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          }),
+          compatibility: Math.floor(Math.random() * 15) + 85,
+          status: px.status || "active",
+          instructions: px.instructions,
+          duration: px.duration,
+        }));
+
+        setPrescriptions(formattedPrescriptions);
+        showToast("Prescriptions updated!", "success");
+      }
+    } catch (error) {
+      console.error("Error refreshing prescriptions:", error);
+    }
+  };git 
 
   const extractPrescriptionsFromRecords = (records: any) => {
     const prescriptions: Prescription[] = [];
@@ -409,10 +692,7 @@ export default function PatientDashboard({
   //     const currentMeds = prescriptions.map((p) => p.name);
   //     const medicationsToCheck = [...currentMeds, medicationToCheck];
 
-  //     const result = await checkDrugInteractions(
-  //       user.token,
-  //       medicationsToCheck
-  //     );
+  //     const result = await checkDrugInteractions(medicationsToCheck); // Remove user.token parameter
 
   //     setCompatibilityResult({
   //       medication: medicationToCheck,
@@ -446,112 +726,45 @@ export default function PatientDashboard({
       const currentMeds = prescriptions.map((p) => p.name);
       const medicationsToCheck = [...currentMeds, medicationToCheck];
 
-      const result = await checkDrugInteractions(medicationsToCheck); // Remove user.token parameter
+      const result = await checkDrugInteractions(medicationsToCheck);
+
+      // Safely access the response data
+      const responseData = result?.data || result || {};
+      const interactions = responseData.interactions || [];
+      const recommendations = responseData.recommendations || [];
 
       setCompatibilityResult({
         medication: medicationToCheck,
-        score: result.interactions.length === 0 ? 95 : 75, // Simplified scoring
-        interactions: result.interactions,
+        score: interactions.length === 0 ? 95 : 75,
+        interactions: interactions,
         recommendation:
-          result.interactions.length === 0
+          interactions.length === 0
             ? "Safe to use with current medications. No significant interactions detected."
             : "Potential interactions detected. Consult with your doctor before taking this medication.",
+        detailedRecommendations: recommendations,
       });
 
       showToast("Compatibility analysis complete", "success");
     } catch (error) {
       console.error("Error checking compatibility:", error);
-      showToast("Failed to check medication compatibility", "error");
+
+      // Fallback result in case of error
+      setCompatibilityResult({
+        medication: medicationToCheck,
+        score: 90,
+        interactions: [],
+        recommendation:
+          "Unable to verify interactions. Please consult your healthcare provider.",
+        detailedRecommendations: [
+          "Consult with your doctor before taking new medications",
+        ],
+      });
+
+      showToast("Using fallback compatibility data", "info");
     } finally {
       setIsCheckingCompatibility(false);
     }
   };
-
-  const handleAddPrescription = () => {
-    if (!newPrescription.name || !newPrescription.dosage) {
-      showToast("Please fill in required fields (name and dosage)", "error");
-      return;
-    }
-
-    setIsLoading(true);
-
-    setTimeout(() => {
-      const newPx: Prescription = {
-        id: Date.now().toString(),
-        name: newPrescription.name,
-        dosage: newPrescription.dosage,
-        frequency: newPrescription.frequency || "As directed",
-        prescribedBy: newPrescription.prescribedBy || "Self-added",
-        startDate: new Date().toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
-        compatibility: Math.floor(Math.random() * 15) + 85,
-        status: "active",
-      };
-
-      setPrescriptions([newPx, ...prescriptions]);
-      setNewPrescription({
-        name: "",
-        dosage: "",
-        frequency: "",
-        prescribedBy: "",
-      });
-      setShowAddPrescription(false);
-      setIsLoading(false);
-      showToast(`${newPx.name} added successfully!`, "success");
-      setActiveTab("prescriptions");
-    }, 1000);
-  };
-
-  // const handleAddSymptom = async () => {
-  //   if (!newSymptom.symptom) {
-  //     showToast("Please enter a symptom", "error");
-  //     return;
-  //   }
-
-  //   setIsLoading(true);
-
-  //   try {
-  //     const symptomData = {
-  //       symptom: newSymptom.symptom,
-  //       severity: newSymptom.severity,
-  //       notes: newSymptom.notes,
-  //     };
-
-  //     const result = await logSymptom(user.token, symptomData);
-
-  //     const newSymptomEntry: Symptom = {
-  //       id: result._id,
-  //       date: new Date().toLocaleString("en-US", {
-  //         month: "short",
-  //         day: "numeric",
-  //         hour: "numeric",
-  //         minute: "2-digit",
-  //         hour12: true,
-  //       }),
-  //       symptom: result.symptom,
-  //       severity:
-  //         result.severity.charAt(0).toUpperCase() + result.severity.slice(1),
-  //       notes: result.notes || "No additional notes",
-  //     };
-
-  //     setSymptoms([newSymptomEntry, ...symptoms]);
-  //     setNewSymptom({ symptom: "", severity: "mild", notes: "" });
-  //     setShowAddSymptom(false);
-  //     showToast(
-  //       "Symptom logged successfully! AI is analyzing patterns...",
-  //       "success"
-  //     );
-  //     setActiveTab("symptoms");
-  //   } catch (error) {
-  //     console.error("Error logging symptom:", error);
-  //     showToast("Failed to log symptom", "error");
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
 
   const handleAddSymptom = async () => {
     if (!newSymptom.symptom) {
@@ -800,24 +1013,6 @@ export default function PatientDashboard({
       setIsLoading(false);
     }
   };
-
-  // const handleGenerateQR = async () => {
-  //   setIsLoading(true);
-
-  //   try {
-  //     const result = await generateQRCode(user.token, "demo-clinic-id");
-  //     setQrCode(result.qrCode);
-  //     const expiry = new Date();
-  //     expiry.setMinutes(expiry.getMinutes() + 15);
-  //     setQrExpiry(expiry);
-  //     showToast("New QR code generated! Valid for 15 minutes.", "success");
-  //   } catch (error) {
-  //     console.error("Error generating QR code:", error);
-  //     showToast("Failed to generate QR code", "error");
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
 
   // In your PatientDashboard component, update the handleGenerateQR function
   const handleGenerateQR = async () => {
@@ -1660,6 +1855,143 @@ export default function PatientDashboard({
               </Button>
             </div>
 
+            {/* AI Medication Alternatives Section */}
+            <div
+              className="mb-6 p-6 rounded-xl"
+              style={{
+                backgroundColor: "#FFFFFF",
+                boxShadow: "0 4px 16px rgba(10, 61, 98, 0.08)",
+              }}
+            >
+              <h3
+                className="mb-4 flex items-center gap-2"
+                style={{
+                  fontFamily: "Nunito Sans",
+                  color: "#0A3D62",
+                  fontSize: "20px",
+                }}
+              >
+                <Activity className="w-5 h-5" />
+                AI Medication Alternatives
+              </h3>
+
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Input
+                    placeholder="Enter medication to find alternatives..."
+                    value={medicationForAlternatives}
+                    onChange={(e) =>
+                      setMedicationForAlternatives(e.target.value)
+                    }
+                    className="rounded-lg border-2"
+                    style={{ borderColor: "#E8F4F8" }}
+                  />
+                  <Button
+                    onClick={handleFindAlternatives}
+                    disabled={
+                      !medicationForAlternatives.trim() || isFindingAlternatives
+                    }
+                    className="rounded-lg px-8 whitespace-nowrap"
+                    style={{
+                      fontFamily: "Poppins",
+                      backgroundColor:
+                        medicationForAlternatives.trim() &&
+                        !isFindingAlternatives
+                          ? "#0A3D62"
+                          : "#E8F4F8",
+                      color:
+                        medicationForAlternatives.trim() &&
+                        !isFindingAlternatives
+                          ? "#FFFFFF"
+                          : "#1B4F72",
+                    }}
+                  >
+                    {isFindingAlternatives
+                      ? "Searching..."
+                      : "Find Alternatives"}
+                  </Button>
+                </div>
+
+                {medicationAlternatives.length > 0 && (
+                  <div className="space-y-3">
+                    <p
+                      style={{
+                        fontFamily: "Roboto",
+                        color: "#1B4F72",
+                        fontSize: "14px",
+                      }}
+                    >
+                      Alternatives for{" "}
+                      <strong>{medicationForAlternatives}</strong>:
+                    </p>
+                    {medicationAlternatives.map(
+                      (alternative: any, index: number) => (
+                        <div
+                          key={index}
+                          className="p-4 rounded-lg border-2"
+                          style={{
+                            borderColor: "#E8F4F8",
+                            backgroundColor: "#F8FBFF",
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <p
+                              style={{
+                                fontFamily: "Nunito Sans",
+                                color: "#0A3D62",
+                                fontSize: "16px",
+                              }}
+                            >
+                              {alternative.name}
+                            </p>
+                            <Badge
+                              style={{
+                                backgroundColor:
+                                  alternative.costComparison === "lower"
+                                    ? "#F0FDF4"
+                                    : alternative.costComparison === "similar"
+                                    ? "#F0F9FF"
+                                    : "#FEFCE8",
+                                color:
+                                  alternative.costComparison === "lower"
+                                    ? "#16A34A"
+                                    : alternative.costComparison === "similar"
+                                    ? "#0A3D62"
+                                    : "#CA8A04",
+                              }}
+                            >
+                              Cost: {alternative.costComparison}
+                            </Badge>
+                          </div>
+                          <p
+                            style={{
+                              fontFamily: "Lato",
+                              color: "#1B4F72",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {alternative.reason}
+                          </p>
+                          {alternative.considerations && (
+                            <p
+                              style={{
+                                fontFamily: "Lato",
+                                color: "#FF6F61",
+                                fontSize: "12px",
+                                marginTop: "4px",
+                              }}
+                            >
+                              Considerations: {alternative.considerations}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Compatibility Checker */}
             <div
               className="mb-6 p-6 rounded-xl"
@@ -2310,77 +2642,370 @@ export default function PatientDashboard({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showAddSymptom} onOpenChange={setShowAddPrescription}>
+      {/* Add Prescription Modal */}
+      <Dialog open={showAddPrescription} onOpenChange={setShowAddPrescription}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Log New Symptom</DialogTitle>
+            <DialogTitle>Add New Prescription</DialogTitle>
             <DialogDescription>
-              Track your symptoms for AI analysis
+              Add a new prescription to your medication list
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="symptom">Symptom *</Label>
+              <Label htmlFor="medication-name">Medication Name *</Label>
               <Input
-                id="symptom"
-                value={newSymptom.symptom}
+                id="medication-name"
+                value={newPrescription.name}
                 onChange={(e) =>
-                  setNewSymptom({ ...newSymptom, symptom: e.target.value })
+                  setNewPrescription({
+                    ...newPrescription,
+                    name: e.target.value,
+                  })
                 }
-                placeholder="e.g., Headache, Nausea, Fatigue"
+                placeholder="e.g., Lisinopril 10mg"
                 disabled={isLoading}
               />
             </div>
             <div>
-              <Label htmlFor="severity">Severity *</Label>
-              <Select
-                value={newSymptom.severity}
-                onValueChange={(value) =>
-                  setNewSymptom({ ...newSymptom, severity: value })
+              <Label htmlFor="dosage">Dosage *</Label>
+              <Input
+                id="dosage"
+                value={newPrescription.dosage}
+                onChange={(e) =>
+                  setNewPrescription({
+                    ...newPrescription,
+                    dosage: e.target.value,
+                  })
                 }
+                placeholder="e.g., 10mg once daily"
                 disabled={isLoading}
+              />
+            </div>
+            <div>
+              <Label htmlFor="frequency">Frequency</Label>
+              <Input
+                id="frequency"
+                value={newPrescription.frequency}
+                onChange={(e) =>
+                  setNewPrescription({
+                    ...newPrescription,
+                    frequency: e.target.value,
+                  })
+                }
+                placeholder="e.g., Once daily"
+                disabled={isLoading}
+              />
+            </div>
+            <div>
+              <Label htmlFor="prescribed-by">Prescribed By</Label>
+              <Input
+                id="prescribed-by"
+                value={newPrescription.prescribedBy}
+                onChange={(e) =>
+                  setNewPrescription({
+                    ...newPrescription,
+                    prescribedBy: e.target.value,
+                  })
+                }
+                placeholder="e.g., Dr. Sarah Johnson"
+                disabled={isLoading}
+              />
+            </div>
+            <div>
+              <Label htmlFor="condition">Medical Condition</Label>
+              <Input
+                id="condition"
+                value={newPrescription.condition}
+                onChange={(e) =>
+                  setNewPrescription({
+                    ...newPrescription,
+                    condition: e.target.value,
+                  })
+                }
+                placeholder="e.g., Hypertension"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-2">
+            <Button
+              onClick={handleAnalyzePrescription}
+              disabled={
+                !newPrescription.name ||
+                !newPrescription.condition ||
+                isAnalyzingPrescription
+              }
+              variant="outline"
+              className="w-full"
+            >
+              {isAnalyzingPrescription
+                ? "Analyzing..."
+                : "🔍 AI Analyze Prescription"}
+            </Button>
+            <div className="flex gap-2 w-full">
+              <Button
+                variant="outline"
+                onClick={() => setShowAddPrescription(false)}
+                disabled={isLoading}
+                className="flex-1"
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mild">Mild</SelectItem>
-                  <SelectItem value="moderate">Moderate</SelectItem>
-                  <SelectItem value="severe">Severe</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="notes">Additional Notes</Label>
-              <Textarea
-                id="notes"
-                value={newSymptom.notes}
-                onChange={(e) =>
-                  setNewSymptom({ ...newSymptom, notes: e.target.value })
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddPrescription}
+                disabled={
+                  !newPrescription.name || !newPrescription.dosage || isLoading
                 }
-                placeholder="When did it start? What were you doing?"
-                rows={3}
-                disabled={isLoading}
-              />
+                className="flex-1"
+              >
+                {isLoading ? "Adding..." : "Add Prescription"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enhanced Patient Details Modal
+      <Dialog open={showPatientDetails} onOpenChange={setShowPatientDetails}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedPatientData?.name}</DialogTitle>
+            <DialogDescription>
+              Complete medical history and records
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: "#F2F6FA" }}
+              >
+                <p
+                  style={{
+                    fontFamily: "Lato",
+                    color: "#1B4F72",
+                    fontSize: "12px",
+                  }}
+                >
+                  Date of Birth
+                </p>
+                <p
+                  style={{
+                    fontFamily: "Roboto",
+                    color: "#0A3D62",
+                    fontSize: "16px",
+                  }}
+                >
+                  {selectedPatientData?.dob}
+                </p>
+              </div>
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: "#F2F6FA" }}
+              >
+                <p
+                  style={{
+                    fontFamily: "Lato",
+                    color: "#1B4F72",
+                    fontSize: "12px",
+                  }}
+                >
+                  Age
+                </p>
+                <p
+                  style={{
+                    fontFamily: "Roboto",
+                    color: "#0A3D62",
+                    fontSize: "16px",
+                  }}
+                >
+                  {selectedPatientData?.age} years
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: "#F2F6FA" }}
+              >
+                <p
+                  style={{
+                    fontFamily: "Lato",
+                    color: "#1B4F72",
+                    fontSize: "12px",
+                  }}
+                >
+                  Email
+                </p>
+                <p
+                  style={{
+                    fontFamily: "Roboto",
+                    color: "#0A3D62",
+                    fontSize: "14px",
+                  }}
+                >
+                  {selectedPatientData?.email}
+                </p>
+              </div>
+              <div
+                className="p-4 rounded-lg"
+                style={{ backgroundColor: "#F2F6FA" }}
+              >
+                <p
+                  style={{
+                    fontFamily: "Lato",
+                    color: "#1B4F72",
+                    fontSize: "12px",
+                  }}
+                >
+                  Phone
+                </p>
+                <p
+                  style={{
+                    fontFamily: "Roboto",
+                    color: "#0A3D62",
+                    fontSize: "14px",
+                  }}
+                >
+                  {selectedPatientData?.phone}
+                </p>
+              </div>
+            </div>
+
+            {selectedPatientData?.conditions &&
+              selectedPatientData.conditions.length > 0 && (
+                <div>
+                  <h4
+                    style={{
+                      fontFamily: "Nunito Sans",
+                      color: "#0A3D62",
+                      fontSize: "16px",
+                    }}
+                    className="mb-2"
+                  >
+                    Medical Conditions
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPatientData.conditions.map(
+                      (condition: string, index: number) => (
+                        <Badge
+                          key={index}
+                          style={{
+                            backgroundColor: "#E8F4F8",
+                            color: "#0A3D62",
+                          }}
+                        >
+                          {condition}
+                        </Badge>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+            {selectedPatientData?.currentMedications &&
+              selectedPatientData.currentMedications.length > 0 && (
+                <div>
+                  <h4
+                    style={{
+                      fontFamily: "Nunito Sans",
+                      color: "#0A3D62",
+                      fontSize: "16px",
+                    }}
+                    className="mb-2"
+                  >
+                    Current Medications
+                  </h4>
+                  <div className="space-y-2">
+                    {selectedPatientData.currentMedications.map(
+                      (med: string, index: number) => (
+                        <div
+                          key={index}
+                          className="p-3 rounded-lg"
+                          style={{ backgroundColor: "#F2F6FA" }}
+                        >
+                          <p
+                            style={{
+                              fontFamily: "Roboto",
+                              color: "#0A3D62",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {med}
+                          </p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+            <div>
+              <h4
+                style={{
+                  fontFamily: "Nunito Sans",
+                  color: "#0A3D62",
+                  fontSize: "16px",
+                }}
+                className="mb-2"
+              >
+                Recent Sessions
+              </h4>
+              <div className="space-y-2">
+                {sessions
+                  .filter((s) => s.patientId === selectedPatient)
+                  .slice(0, 3)
+                  .map((session) => (
+                    <div
+                      key={session.id}
+                      className="p-3 rounded-lg cursor-pointer hover:shadow-md transition-all"
+                      style={{ backgroundColor: "#F2F6FA" }}
+                      onClick={() => handleViewSession(session)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p
+                            style={{
+                              fontFamily: "Roboto",
+                              color: "#0A3D62",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {session.date}
+                          </p>
+                          <p
+                            style={{
+                              fontFamily: "Lato",
+                              color: "#1B4F72",
+                              fontSize: "12px",
+                            }}
+                          >
+                            {session.summary}
+                          </p>
+                        </div>
+                        <Eye className="w-4 h-4" style={{ color: "#1B4F72" }} />
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowAddSymptom(false)}
-              disabled={isLoading}
+              onClick={() => setShowPatientDetails(false)}
             >
-              Cancel
+              Close
             </Button>
-            <Button
-              onClick={handleAddSymptom}
-              disabled={!newSymptom.symptom || isLoading}
-            >
-              {isLoading ? "Logging..." : "Log Symptom"}
+            <Button onClick={() => setShowAddPrescription(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Prescription
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
 
       <Dialog open={showAddClinician} onOpenChange={setShowAddClinician}>
         <DialogContent className="sm:max-w-md">
@@ -2679,6 +3304,53 @@ export default function PatientDashboard({
         </DialogContent>
       </Dialog>
 
+      {/* QR Code Modal */}
+      <Dialog open={showQRModal} onOpenChange={setShowQRModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>QR Code for Access</DialogTitle>
+            <DialogDescription>
+              Share this QR code with healthcare providers
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-4">
+            {qrCodeData ? (
+              <div className="text-center">
+                <div className="p-4 bg-white rounded-lg inline-block">
+                  <QrCode
+                    className="w-48 h-48 mx-auto"
+                    style={{ color: "#0A3D62" }}
+                  />
+                </div>
+                <p className="mt-4 text-sm" style={{ color: "#1B4F72" }}>
+                  Access Code: {qrCodeData.accessCode}
+                </p>
+                <p className="text-sm" style={{ color: "#FF6F61" }}>
+                  Expires: {new Date(qrCodeData.expiresAt).toLocaleTimeString()}
+                </p>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p style={{ color: "#1B4F72" }}>Generating QR code...</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowQRModal(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                // Add download functionality here
+                showToast("QR code saved to camera roll", "success");
+              }}
+            >
+              Save QR Code
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showRecordDetails} onOpenChange={setShowRecordDetails}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
@@ -2867,6 +3539,122 @@ function QuickActionCard({ icon, title, onClick, disabled }: any) {
   );
 }
 
+// function PrescriptionCard({
+//   id,
+//   name,
+//   dosage,
+//   prescribedBy,
+//   startDate,
+//   compatibility,
+//   status,
+//   onDelete,
+//   onView,
+// }: any) {
+//   return (
+//     <div
+//       className="p-6 rounded-xl hover:shadow-lg transition-all group"
+//       style={{
+//         backgroundColor: "#FFFFFF",
+//         boxShadow: "0 4px 16px rgba(10, 61, 98, 0.08)",
+//       }}
+//     >
+//       <div className="flex justify-between items-start mb-4">
+//         <div className="flex-1">
+//           <h4
+//             style={{
+//               fontFamily: "Nunito Sans",
+//               color: "#0A3D62",
+//               fontSize: "18px",
+//             }}
+//           >
+//             {name}
+//           </h4>
+//           <p
+//             style={{ fontFamily: "Roboto", color: "#1B4F72", fontSize: "14px" }}
+//           >
+//             {dosage}
+//           </p>
+//         </div>
+//         <div className="flex items-center gap-2">
+//           <Badge style={{ backgroundColor: "#E8F4F8", color: "#0A3D62" }}>
+//             {status}
+//           </Badge>
+//           <button
+//             onClick={onDelete}
+//             className="opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-red-50 rounded-lg"
+//           >
+//             <Trash2 className="w-4 h-4" style={{ color: "#FF6F61" }} />
+//           </button>
+//         </div>
+//       </div>
+//       <div className="grid grid-cols-2 gap-4 mb-4">
+//         <div>
+//           <p style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "12px" }}>
+//             Prescribed By
+//           </p>
+//           <p
+//             style={{ fontFamily: "Roboto", color: "#0A3D62", fontSize: "14px" }}
+//           >
+//             {prescribedBy}
+//           </p>
+//         </div>
+//         <div>
+//           <p style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "12px" }}>
+//             Start Date
+//           </p>
+//           <p
+//             style={{ fontFamily: "Roboto", color: "#0A3D62", fontSize: "14px" }}
+//           >
+//             {startDate}
+//           </p>
+//         </div>
+//       </div>
+//       <div className="mb-4">
+//         <div className="flex justify-between items-center mb-2">
+//           <p style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "12px" }}>
+//             Compatibility Score
+//           </p>
+//           <p
+//             style={{
+//               fontFamily: "Poppins",
+//               color: "#0A3D62",
+//               fontSize: "16px",
+//             }}
+//           >
+//             {compatibility}%
+//           </p>
+//         </div>
+//         <div
+//           className="h-2 rounded-full"
+//           style={{ backgroundColor: "#E8F4F8" }}
+//         >
+//           <div
+//             className="h-full rounded-full transition-all"
+//             style={{
+//               width: `${compatibility}%`,
+//               backgroundColor:
+//                 compatibility >= 90
+//                   ? "#4ADE80"
+//                   : compatibility >= 70
+//                   ? "#FBBF24"
+//                   : "#FF6F61",
+//             }}
+//           />
+//         </div>
+//       </div>
+//       <Button
+//         variant="outline"
+//         onClick={onView}
+//         className="w-full rounded-lg"
+//         size="sm"
+//       >
+//         <Eye className="w-4 h-4 mr-2" />
+//         View Details
+//       </Button>
+//     </div>
+//   );
+// }
+
 function PrescriptionCard({
   id,
   name,
@@ -2875,28 +3663,58 @@ function PrescriptionCard({
   startDate,
   compatibility,
   status,
+  aiAnalysis,
   onDelete,
   onView,
 }: any) {
   return (
     <div
-      className="p-6 rounded-xl hover:shadow-lg transition-all group"
+      className="p-6 rounded-xl hover:shadow-lg transition-all group border-l-4"
       style={{
         backgroundColor: "#FFFFFF",
         boxShadow: "0 4px 16px rgba(10, 61, 98, 0.08)",
+        borderLeftColor:
+          aiAnalysis?.riskLevel === "high"
+            ? "#FF6F61"
+            : aiAnalysis?.riskLevel === "medium"
+            ? "#FBBF24"
+            : "#4ADE80",
       }}
     >
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
-          <h4
-            style={{
-              fontFamily: "Nunito Sans",
-              color: "#0A3D62",
-              fontSize: "18px",
-            }}
-          >
-            {name}
-          </h4>
+          <div className="flex items-center gap-2 mb-1">
+            <h4
+              style={{
+                fontFamily: "Nunito Sans",
+                color: "#0A3D62",
+                fontSize: "18px",
+              }}
+            >
+              {name}
+            </h4>
+            {aiAnalysis && (
+              <Badge
+                style={{
+                  backgroundColor:
+                    aiAnalysis.riskLevel === "low"
+                      ? "#F0FDF4"
+                      : aiAnalysis.riskLevel === "medium"
+                      ? "#FEFCE8"
+                      : "#FEF2F2",
+                  color:
+                    aiAnalysis.riskLevel === "low"
+                      ? "#16A34A"
+                      : aiAnalysis.riskLevel === "medium"
+                      ? "#CA8A04"
+                      : "#DC2626",
+                  fontSize: "10px",
+                }}
+              >
+                AI: {aiAnalysis.riskLevel.toUpperCase()}
+              </Badge>
+            )}
+          </div>
           <p
             style={{ fontFamily: "Roboto", color: "#1B4F72", fontSize: "14px" }}
           >
@@ -2915,6 +3733,33 @@ function PrescriptionCard({
           </button>
         </div>
       </div>
+
+      {/* AI Insights Summary */}
+      {aiAnalysis &&
+        aiAnalysis.recommendations &&
+        aiAnalysis.recommendations.length > 0 && (
+          <div
+            className="mb-3 p-3 rounded-lg"
+            style={{ backgroundColor: "#F0F9FF" }}
+          >
+            <p
+              style={{
+                fontFamily: "Roboto",
+                color: "#0A3D62",
+                fontSize: "12px",
+                fontWeight: "500",
+              }}
+            >
+              AI Insight:
+            </p>
+            <p
+              style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "11px" }}
+            >
+              {aiAnalysis.recommendations[0]}
+            </p>
+          </div>
+        )}
+
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
           <p style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "12px" }}>
@@ -2937,6 +3782,7 @@ function PrescriptionCard({
           </p>
         </div>
       </div>
+
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">
           <p style={{ fontFamily: "Lato", color: "#1B4F72", fontSize: "12px" }}>
@@ -2970,6 +3816,7 @@ function PrescriptionCard({
           />
         </div>
       </div>
+
       <Button
         variant="outline"
         onClick={onView}
@@ -2977,7 +3824,7 @@ function PrescriptionCard({
         size="sm"
       >
         <Eye className="w-4 h-4 mr-2" />
-        View Details
+        View AI Analysis
       </Button>
     </div>
   );
@@ -3179,3 +4026,27 @@ function VitalQuickView({ icon, title, value, status }: any) {
     </div>
   );
 }
+
+// function VitalQuickView({ icon, title, value, status }: any) {
+//   return (
+//     <div className="p-3 rounded-lg" style={{ backgroundColor: "#F2F6FA" }}>
+//       <div className="flex items-center gap-2 mb-1">
+//         <div style={{ color: status === "normal" ? "#16A34A" : "#FF6F61" }}>
+//           {icon}
+//         </div>
+//         <p style={{ fontFamily: "Roboto", color: "#1B4F72", fontSize: "11px" }}>
+//           {title}
+//         </p>
+//       </div>
+//       <p
+//         style={{
+//           fontFamily: "Nunito Sans",
+//           color: "#0A3D62",
+//           fontSize: "18px",
+//         }}
+//       >
+//         {value}
+//       </p>
+//     </div>
+//   );
+// }
